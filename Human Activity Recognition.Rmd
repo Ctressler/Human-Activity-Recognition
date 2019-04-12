@@ -1,0 +1,162 @@
+---
+title: "Human Activity Recognition"
+author: "Charmaine Tressler"
+date: "April 6, 2019"
+output:
+  html_document: default
+  pdf_document: default
+---
+## Human Activity Recognition
+
+### Introduction
+
+Devices such as Jawbone Up, Nike FuelBand and Fitbit allow users to collect a large amount of data about personal activity. 
+
+In this study data has been collected from 6 young male participants who were asked to perform one set of ten repetitions of the Unilateral Dumbbell Biceps Curl correct and incorrectly in 5 different ways. The data is received from acceleromteres on the belt, forearm, arm and dumbell of each individual.
+
+The following 5 classes were used:
+
+Class A - exactly according to specification (correct)
+Class B - throwing the elbows to the front
+Class C - lifting the dumbbell only half way
+Class D - lowering dumbbell only half way
+Class E - throwing the hips to the front
+
+
+The goal of this exercise is to predict the manner in which the exercise was done which is represented by the 'classe' variable in the dataset.
+
+### Loading Packages
+
+```{r packages, echo=TRUE, results='hide'}
+library(caret)
+library(corrplot)
+library(randomForest)
+library(e1071)
+library(gbm)
+```
+
+### Loading the provided Training data and splitting further into Test and Training data
+```{r Load Dataset, echo=TRUE}
+
+training <- read.csv(file = "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv", header = TRUE)
+train_data <- createDataPartition(training$classe, p=0.7, list = FALSE)
+inTrain <- training[train_data,]
+inTest <- training[-train_data,]
+```
+
+### PreProcessing Training data
+
+Removing columns that have a value of primarily NA:
+
+```{r removeNA, echo = TRUE}
+training_rmna <- inTrain[,apply(inTrain, 2, function(x) !any(is.na(x)))]
+```
+
+Checking for highly correlated variables. Subsetting to only include numerical columns and removing first 4 columns.
+
+```{r Correlation, echo=TRUE}
+
+nums <- training_rmna[, sapply(training_rmna, is.numeric)]
+training_data = nums[, -c(1:4)]
+corrplot(cor(training_data), method="square", type = "upper", tl.cex=0.7)
+df <- cor(training_data)
+
+# Get colummns with high correlation (0ver 0.9) that are to be removed.
+hc <- findCorrelation(df, cutoff=0.9) 
+
+# Remove these columns from the final dataset.
+training_data_new = training_data[,-c(hc)]
+
+# Add classe column to this dataset
+training_data_new = cbind(training_data_new,classe=inTrain$classe)
+
+```
+
+Removing predictors with near zero variance:
+```{r nzv, echo=TRUE}
+nzv <- nearZeroVar(training_data_new, uniqueCut = 20)
+training_data_new <- training_data_new[,-c(nzv)]
+```
+
+### Train data using Random Forest and Gradient Boosting Model
+
+
+
+We will now train this data using Random Forest with Cross Validation. 
+
+For cross validation, the method that was used was 5-fold cross validation with 2 repeats.
+
+```{r randomforest, echo=TRUE, cache = TRUE}
+control <- trainControl(method="repeatedcv", number=5, repeats = 2)
+rf_model <- train(classe ~., data = training_data_new, method = "rf", trControl = control)
+```
+
+
+Out of bag estimate of error rate for random forest with 5-fold cross validation:
+```{r oob}
+rf_model$finalModel
+```
+
+
+We will now train this data using Gradient Boosting Model with 5-fold cross validation repeated 2 times
+```{r boosting, echo=TRUE, cache= TRUE}
+
+boost_model <- train(classe~., data = training_data_new, method ="gbm", trControl=control, verbose = FALSE)
+```
+
+
+Accuracy for Boosted model with 5 fold cross validation:
+```{r boost accuracy}
+boost_model
+```
+
+### Prediction on training data
+
+
+1. Using random forest with 5-fold cross validation
+
+```{r rf traindata, echo=TRUE}
+rf_model_predict_intrain <- predict(rf_model, training_data_new)
+confusionMatrix(rf_model_predict_intrain, training_data_new$classe)
+```
+
+2. Using gradient boosting model with 5-fold cross validation
+
+```{r boost traindata, echo=TRUE}
+boost_model_predict_intrain <- predict(boost_model, training_data_new)
+confusionMatrix(boost_model_predict_intrain, training_data_new$classe)
+```
+
+
+### Prediction on Test data
+
+
+1. Using random forest with 5-fold cross validation
+
+```{r rf testdata, echo=TRUE}
+rf_model_predict_intest <- predict(rf_model, inTest)
+confusionMatrix(rf_model_predict_intest, inTest$classe)
+```
+
+2. Using gradient boosting model with 5-fold cross validation
+
+```{r boost testdata, echo=TRUE}
+boost_model_predict_intest <- predict(boost_model, inTest)
+confusionMatrix(boost_model_predict_intest, inTest$classe)
+```
+The Random Forest Model has better prediction accuracy so we will use that for predicting the classe in the test data.
+
+### Loading provided Test data to predict outcome
+
+```{r echo=TRUE}
+Testing <- read.csv(file = "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv", header=TRUE)
+predict_rf_testing <- predict(rf_model, Testing)
+predict_rf_testing
+```
+
+
+
+## Citation
+Velloso,E.; Bulling, A.; Gellersen, H.; Ugulino, W.; Fuks, H. QualitativeActivity Recognition of Weight Lifting Exercises. Proceedings of4th International Conference in Cooperation with SIGCHI (AugmentedHuman '13) . Stuttgart, Germany: ACM SIGCHI, 2013. 
+
+Read more: http://web.archive.org/web/20161224072740/http:/groupware.les.inf.puc-rio.br/har#weight_lifting_exercises#ixzz5kKOUfure
